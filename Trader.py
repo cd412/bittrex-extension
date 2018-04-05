@@ -1,34 +1,51 @@
-from bittrex.bittrex import Bittrex
+from bittrex import Bittrex
+from exceptions import API_Timeout
 import requests
 import time
 import config
 import logging
+import random
 
-def createLogger():
+def createFileLogger():
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
-    filehandler = logging.FileHandler('log.log')
-    formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(message)s')
-    filehandler.setFormatter(formatter)
-    logger.addHandler(filehandler)
+    handler = logging.FileHandler('log.csv')
+    formatter = logging.Formatter('%(asctime)s,%(message)s', 
+                                  datefmt="%Y-%m-%d %H:%M:%S")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     return logger
+
 
 class Trader(Bittrex):
     def __init__(self):
         Bittrex.__init__(self, config.api_key, config.api_secret)
-        self.logger = createLogger()
-        self.logger.info("New Trader Created")
+        self.fileLogger = createFileLogger()
+        self.status = "setting up"
+        self.fileLogger.info(self.status)
+
+    def fileLog(self, msg):
+        logMsg = ','.join(map(str, msg))
+        self.fileLogger.info(logMsg)
     
+    def updateCSV(self):
+        '''Enter the variables you want to log, starting with self.status'''
+        self.fileLog([self.status,
+                      self.r1, 
+                      self.r2, 
+                      self.r3,
+                      self.data])
+
     def handle_resp(self, resp):
-        
         if resp['success']:
-            msg = str(resp['result'])[:100]
-            self.logger.info(msg)
             return resp['result']
         else:
-            msg = str(resp['result'])[:100]
-            self.logger.info(msg)
-            return resp['message']
+            raise API_Timeout
+            #return resp['message']
+
+    def shut_down(self, msg):
+        self.status = "shutting down: " + msg
+        self.fileLogger.info(self.status)
 
     def GET_BALANCES(self):
         return self.handle_resp(self.get_balances())
@@ -95,11 +112,30 @@ class Trader(Bittrex):
     
     def task1(self, sleepTime):
         # enter repetative task here
-        print(self.GET_TICKER("USDT-BTC"))
+        self.trading_routine()
+        self.updateCSV()
         time.sleep(sleepTime)
+
+    def trading_routine(self):
+        self.status = "In trading rountine"
+        print(self.status)
+        # enter trading routine here
+        # update variables: for example r1, r2, r3, data
+        self.r1 = random.randint(1,5)
+        self.r2 = random.randint(1,5)
+        self.r3 = random.randint(1,5)
+        self.data = "dummy data"
+        #self.data = self.GET_TICKER('USDT-BTC')
+        
 
 if __name__ == '__main__':
     t1 = Trader()
     while True:
-        t1.task1(sleepTime=5)
-        
+        try:
+            t1.task1(sleepTime=1)
+        except API_Timeout:
+            t1.shut_down("API Timeout")
+            break
+        except KeyboardInterrupt:
+            t1.shut_down("Keyboard Interrupt")
+            break
